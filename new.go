@@ -13,6 +13,9 @@ var newCmd = &cobra.Command{
 	Short:   "Create a new note",
 	Args:    cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if !noteMode {
+			return fmt.Errorf("this command is only available for notes, use 'task new' instead")
+		}
 		nm, err := notes.NewNoteManager()
 		if err != nil {
 			return err

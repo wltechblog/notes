@@ -3,12 +3,14 @@ package tasks
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/wltechblog/notes/internal/notes"
+	"github.com/wltechblog/notes/internal/platform"
 )
 
 type Status string
@@ -34,13 +36,12 @@ type TaskManager struct {
 }
 
 func NewTaskManager() (*TaskManager, error) {
-	homeDir, err := os.UserHomeDir()
+	baseDir, err := platform.GetDataDir(platform.TasksSubdir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get home directory: %w", err)
+		return nil, err
 	}
 
-	baseDir := filepath.Join(homeDir, ".local", "share", "tasks")
-	if err := os.MkdirAll(baseDir, 0755); err != nil {
+	if err := os.MkdirAll(baseDir, platform.GetDataDirPerm()); err != nil {
 		return nil, fmt.Errorf("failed to create tasks directory: %w", err)
 	}
 
@@ -79,16 +80,6 @@ func (tm *TaskManager) CreateTask(name string, content string) (*Task, error) {
 		name = strconv.FormatInt(time.Now().Unix(), 10)
 	}
 
-	nm, err := notes.NewNoteManager()
-	if err != nil {
-		return nil, err
-	}
-
-	note, err := nm.CreateNote("Task: "+name, content)
-	if err != nil {
-		return nil, err
-	}
-
 	timestamp := time.Now()
 	id, err := tm.getNextID()
 	if err != nil {
@@ -99,7 +90,7 @@ func (tm *TaskManager) CreateTask(name string, content string) (*Task, error) {
 		ID:        id,
 		Name:      name,
 		Status:    StatusOpen,
-		NoteID:    note.ID,
+		NoteID:    "",
 		CreatedAt: timestamp,
 		UpdatedAt: timestamp,
 		Content:   content,
@@ -152,14 +143,6 @@ func (tm *TaskManager) UpdateTaskStatus(id string, status Status) (*Task, error)
 	return &task, nil
 }
 
-func (tm *TaskManager) DeleteTask(id string) error {
-	taskPath := filepath.Join(tm.baseDir, id+".txt")
-	if err := os.Remove(taskPath); err != nil {
-		return fmt.Errorf("failed to delete task: %w", err)
-	}
-	return nil
-}
-
 func (tm *TaskManager) SearchTasks(keyword string) ([]Task, error) {
 	tasks, err := tm.ListTasks("")
 	if err != nil {
@@ -185,7 +168,7 @@ func (tm *TaskManager) loadTask(id string) (Task, error) {
 	}
 
 	lines := strings.Split(string(data), "\n")
-	if len(lines) < 4 {
+	if len(lines) < 5 {
 		return Task{}, fmt.Errorf("invalid task format")
 	}
 
@@ -200,19 +183,9 @@ func (tm *TaskManager) loadTask(id string) (Task, error) {
 	}
 
 	status := Status(strings.TrimPrefix(lines[2], "Status: "))
-
-	var noteID string
-	var name string
-	var content string
-
-	if len(lines) >= 5 && strings.HasPrefix(lines[3], "NoteID:") {
-		noteID = strings.TrimPrefix(lines[3], "NoteID: ")
-		name = strings.TrimPrefix(lines[4], "Name: ")
-		content = strings.Join(lines[5:], "\n")
-	} else {
-		name = strings.TrimPrefix(lines[3], "Name: ")
-		content = strings.Join(lines[4:], "\n")
-	}
+	noteID := strings.TrimPrefix(lines[3], "NoteID: ")
+	name := strings.TrimPrefix(lines[4], "Name: ")
+	content := strings.Join(lines[5:], "\n")
 
 	return Task{
 		ID:        id,
@@ -235,7 +208,7 @@ func (tm *TaskManager) saveTask(task *Task) error {
 	content += task.Content
 
 	taskPath := filepath.Join(tm.baseDir, task.ID+".txt")
-	if err := os.WriteFile(taskPath, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(taskPath, []byte(content), platform.GetDataFilePerm()); err != nil {
 		return fmt.Errorf("failed to save task: %w", err)
 	}
 
@@ -260,9 +233,79 @@ func (tm *TaskManager) getNextID() (string, error) {
 
 	nextID := currentID + 1
 
-	if err := os.WriteFile(counterFile, []byte(strconv.FormatInt(nextID, 10)), 0644); err != nil {
+	if err := os.WriteFile(counterFile, []byte(strconv.FormatInt(nextID, 10)), platform.GetDataFilePerm()); err != nil {
 		return "", fmt.Errorf("failed to write counter: %w", err)
 	}
 
 	return strconv.FormatInt(nextID, 10), nil
+}
+
+func (tm *TaskManager) EditInEditor(task *Task) error {
+	editor := platform.GetDefaultEditor()
+
+	tmpFile, err := os.CreateTemp("", "task-*.txt")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+
+	defer os.Remove(tmpPath)
+
+	if _, err := tmpFile.WriteString(task.Content); err != nil {
+		tmpFile.Close()
+		return fmt.Errorf("failed to write to temp file: %w", err)
+	}
+	tmpFile.Close()
+
+	cmdArgs := platform.GetEditorArgs(editor, tmpPath)
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" && platform.IsGUIEditor(editor) {
+		cmd = exec.Command(cmdArgs[0], cmdArgs[1:]...)
+	} else {
+		cmd = exec.Command(editor, tmpPath)
+	}
+
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to open editor: %w", err)
+	}
+
+	editedContent, err := os.ReadFile(tmpPath)
+	if err != nil {
+		return fmt.Errorf("failed to read edited content: %w", err)
+	}
+
+	task.Content = string(editedContent)
+	task.UpdatedAt = time.Now()
+
+	_, err = tm.UpdateTask(task.ID, task.Content)
+	return err
+}
+
+func (tm *TaskManager) DeleteTask(id string) error {
+	task, err := tm.GetTask(id)
+	if err != nil {
+		return fmt.Errorf("failed to get task: %w", err)
+	}
+
+	if task.NoteID != "" {
+		notesDir, err := platform.GetDataDir(platform.NotesSubdir)
+		if err != nil {
+			return fmt.Errorf("failed to get notes directory: %w", err)
+		}
+		notePath := filepath.Join(notesDir, task.NoteID+".txt")
+		if err := os.Remove(notePath); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to delete associated note: %w", err)
+		}
+	}
+
+	taskPath := filepath.Join(tm.baseDir, id+".txt")
+	if err := os.Remove(taskPath); err != nil {
+		return fmt.Errorf("failed to delete task: %w", err)
+	}
+
+	return nil
 }

@@ -9,10 +9,14 @@ import (
 )
 
 var taskDeleteCmd = &cobra.Command{
-	Use:   "delete [id]",
-	Short: "Delete a task",
-	Args:  cobra.ExactArgs(1),
+	Use:     "delete [id]",
+	Aliases: []string{"del", "rm"},
+	Short:   "Delete a task",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if !taskMode {
+			return fmt.Errorf("this command is only available for tasks, use 'note delete' instead")
+		}
 		tm, err := tasks.NewTaskManager()
 		if err != nil {
 			return err

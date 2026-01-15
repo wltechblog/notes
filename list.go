@@ -11,6 +11,9 @@ var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all notes",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if !noteMode {
+			return fmt.Errorf("this command is only available for notes, use 'task list' instead")
+		}
 		nm, err := notes.NewNoteManager()
 		if err != nil {
 			return err

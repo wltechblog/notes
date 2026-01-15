@@ -5,9 +5,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/wltechblog/notes/internal/platform"
 )
 
 type Note struct {
@@ -27,13 +30,12 @@ type NoteManager struct {
 }
 
 func NewNoteManager() (*NoteManager, error) {
-	homeDir, err := os.UserHomeDir()
+	baseDir, err := platform.GetDataDir(platform.NotesSubdir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get home directory: %w", err)
+		return nil, err
 	}
 
-	baseDir := filepath.Join(homeDir, ".local", "share", "notes")
-	if err := os.MkdirAll(baseDir, 0755); err != nil {
+	if err := os.MkdirAll(baseDir, platform.GetDataDirPerm()); err != nil {
 		return nil, fmt.Errorf("failed to create notes directory: %w", err)
 	}
 
@@ -181,7 +183,7 @@ func (nm *NoteManager) saveNote(note *Note) error {
 	content += note.Content
 
 	notePath := filepath.Join(nm.baseDir, note.ID+".txt")
-	if err := os.WriteFile(notePath, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(notePath, []byte(content), platform.GetDataFilePerm()); err != nil {
 		return fmt.Errorf("failed to save note: %w", err)
 	}
 
@@ -189,10 +191,7 @@ func (nm *NoteManager) saveNote(note *Note) error {
 }
 
 func (nm *NoteManager) EditInEditor(note *Note) error {
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		editor = "vi"
-	}
+	editor := platform.GetDefaultEditor()
 
 	tmpFile, err := os.CreateTemp("", "note-*.txt")
 	if err != nil {
@@ -208,7 +207,14 @@ func (nm *NoteManager) EditInEditor(note *Note) error {
 	}
 	tmpFile.Close()
 
-	cmd := exec.Command(editor, tmpPath)
+	cmdArgs := platform.GetEditorArgs(editor, tmpPath)
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" && platform.IsGUIEditor(editor) {
+		cmd = exec.Command(cmdArgs[0], cmdArgs[1:]...)
+	} else {
+		cmd = exec.Command(editor, tmpPath)
+	}
+
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -246,7 +252,7 @@ func (nm *NoteManager) getNextID() (string, error) {
 
 	nextID := currentID + 1
 
-	if err := os.WriteFile(counterFile, []byte(strconv.FormatInt(nextID, 10)), 0644); err != nil {
+	if err := os.WriteFile(counterFile, []byte(strconv.FormatInt(nextID, 10)), platform.GetDataFilePerm()); err != nil {
 		return "", fmt.Errorf("failed to write counter: %w", err)
 	}
 

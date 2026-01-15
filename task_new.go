@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/wltechblog/notes/internal/notes"
 	"github.com/wltechblog/notes/internal/tasks"
 )
 
@@ -14,6 +13,9 @@ var taskNewCmd = &cobra.Command{
 	Short:   "Create a new task",
 	Args:    cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if !taskMode {
+			return fmt.Errorf("this command is only available for tasks, use 'note new' instead")
+		}
 		tm, err := tasks.NewTaskManager()
 		if err != nil {
 			return err
@@ -29,24 +31,16 @@ var taskNewCmd = &cobra.Command{
 			return err
 		}
 
-		nm, err := notes.NewNoteManager()
-		if err != nil {
+		if err := tm.EditInEditor(task); err != nil {
 			return err
 		}
 
-		note, err := nm.GetNote(task.NoteID)
-		if err != nil {
-			fmt.Printf("Note not found: %s\n", task.NoteID)
+		if task.Content == "" {
+			if err := tm.DeleteTask(task.ID); err != nil {
+				return err
+			}
+			fmt.Println("Task not saved (empty content)")
 			return nil
-		}
-
-		if err := nm.EditInEditor(note); err != nil {
-			return err
-		}
-
-		_, err = nm.UpdateNote(task.NoteID, note.Content)
-		if err != nil {
-			return err
 		}
 
 		fmt.Printf("Task created: %s\n", task.ID)

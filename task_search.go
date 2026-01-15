@@ -12,6 +12,9 @@ var taskSearchCmd = &cobra.Command{
 	Short: "Search tasks by keyword",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if !taskMode {
+			return fmt.Errorf("this command is only available for tasks, use 'note search' instead")
+		}
 		tm, err := tasks.NewTaskManager()
 		if err != nil {
 			return err

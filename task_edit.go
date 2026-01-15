@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/wltechblog/notes/internal/notes"
 	"github.com/wltechblog/notes/internal/tasks"
 )
 
@@ -13,6 +12,9 @@ var taskEditCmd = &cobra.Command{
 	Short: "Edit a task's note",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if !taskMode {
+			return fmt.Errorf("this command is only available for tasks, use 'note edit' instead")
+		}
 		tm, err := tasks.NewTaskManager()
 		if err != nil {
 			return err
@@ -25,27 +27,11 @@ var taskEditCmd = &cobra.Command{
 			return nil
 		}
 
-		nm, err := notes.NewNoteManager()
-		if err != nil {
+		if err := tm.EditInEditor(task); err != nil {
 			return err
 		}
 
-		note, err := nm.GetNote(task.NoteID)
-		if err != nil {
-			fmt.Printf("Note not found: %s\n", task.NoteID)
-			return nil
-		}
-
-		if err := nm.EditInEditor(note); err != nil {
-			return err
-		}
-
-		_, err = nm.UpdateNote(task.NoteID, note.Content)
-		if err != nil {
-			return err
-		}
-
-		fmt.Printf("Task note updated: %s\n", id)
+		fmt.Printf("Task updated: %s\n", id)
 		return nil
 	},
 }

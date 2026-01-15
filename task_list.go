@@ -12,9 +12,14 @@ var (
 )
 
 var taskListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List all tasks",
+	Use:     "list",
+	Aliases: []string{"ls"},
+	Short:   "List all tasks",
+	Long:    "List all tasks. Use --status flag to filter by open, completed, or abandoned",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if !taskMode {
+			return fmt.Errorf("this command is only available for tasks, use 'note list' instead")
+		}
 		tm, err := tasks.NewTaskManager()
 		if err != nil {
 			return err
@@ -41,11 +46,15 @@ var taskListCmd = &cobra.Command{
 		}
 
 		for _, task := range taskList {
-			fmt.Printf("%s | %s | [%s] | Note: %s | Created: %s | Updated: %s\n",
+			contentPreview := task.Content
+			if len(contentPreview) > 30 {
+				contentPreview = contentPreview[:30] + "..."
+			}
+			fmt.Printf("%s | %s | [%s] | %s | Created: %s | Updated: %s\n",
 				task.ID,
 				task.Name,
 				task.Status,
-				task.NoteID,
+				contentPreview,
 				task.CreatedAt.Format("2006-01-02 15:04:05"),
 				task.UpdatedAt.Format("2006-01-02 15:04:05"))
 		}
@@ -55,8 +64,8 @@ var taskListCmd = &cobra.Command{
 }
 
 func init() {
-	taskListCmd.Flags().StringVarP(&statusFilter, "status", "s", "", "Filter by status (open, completed, abandoned)")
 	if taskMode {
+		taskListCmd.Flags().StringVarP(&statusFilter, "status", "s", "", "Filter by status (open, completed, abandoned)")
 		rootCmd.AddCommand(taskListCmd)
 	}
 }

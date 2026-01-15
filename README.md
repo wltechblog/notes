@@ -6,13 +6,14 @@ The same binary serves both functions - invoked as `note` for notes and `task` f
 
 ## Features
 
-- **Simple file-based storage**: Notes stored in `~/.local/share/notes/`, tasks in `~/.local/share/tasks/`
+- **Simple file-based storage**: Platform-appropriate storage (Windows: `%LOCALAPPDATA%`, Unix: `~/.local/share/`)
 - **Unique identification**: Each note/task has a unique sequential numeric ID
 - **Timestamp tracking**: Track when notes/tasks were created and last edited
 - **Text search**: Search across note/task names and content
-- **Editor integration**: Uses your `$EDITOR` for creating and editing notes
+- **Editor integration**: Uses your `$EDITOR` with platform-specific defaults
 - **Task status management**: Change task status between open, completed, and abandoned
 - **Status filtering**: List tasks by status
+- **Cross-platform support**: Works on Windows, Linux, and macOS with appropriate defaults
 - **Shell completion**: Auto-complete support for bash, zsh, fish, and powershell
 
 ## Installation
@@ -34,7 +35,7 @@ make build    # Build binary
 make install  # Install to ~/.local/bin/ (also creates 'task' symlink)
 ```
 
-The installation creates both `note` and `task` commands. The `task` command is a symlink to the same binary.
+The installation creates a single binary named `note` with a symlink named `task`. Both commands access the same binary but show different available commands.
 
 ## Task Commands
 
@@ -72,7 +73,7 @@ task status 1 completed      # Example: mark task 1 as completed
 task status 2 abandoned      # Example: mark task 2 as abandoned
 ```
 
-Valid statuses: `open`, `completed`, `abandoned`
+Valid statuses: `open`, `completed`, `abandoned` (run `task status --help` for details)
 
 ### Search tasks
 
@@ -90,28 +91,31 @@ task delete <id>         # Delete a task by ID
 task delete 1            # Example: delete task 1
 ```
 
-Deleting a task also deletes its associated note.
+Deleting a task removes the task file.
 
-### Edit a task's note
+### Edit a task
 
 ```bash
-task edit <id>          # Edit the note associated with a task
-task edit 1            # Example: edit note for task 1
+task edit <id>          # Edit the content of a task
+task edit 1            # Example: edit task 1
 ```
 
-Opens `$EDITOR` with the note content associated with the task. Updates the note's content and last edited timestamp.
+Opens `$EDITOR` with the task content. Updates the task's content and last edited timestamp.
 
-## Task & Note Integration
+## Cross-Platform Support
 
-Tasks automatically create associated notes:
+The application is designed to work on both Windows and Unix-like systems:
 
-- When you create a task with `task new`, a corresponding note is created with name "Task: [task name]"
-- The task's note ID is displayed in task listings
-- Use `task edit <id>` to edit the note content of a task
-- The task's note is visible in `note list` and searchable with `note search`
-- Deleting a task also deletes its associated note
-
-This keeps your task documentation separate from task status tracking.
+- **Data storage locations**:
+  - Windows: `%LOCALAPPDATA%\notes\` and `%LOCALAPPDATA%\tasks\`
+  - Linux/macOS: `~/.local/share/notes/` and `~/.local/share/tasks/`
+- **Editor detection**:
+  - Windows: Defaults to `notepad` if `$EDITOR` not set
+  - Unix: Defaults to `vi` if `$EDITOR` not set
+- **GUI editor support**:
+  - VS Code, Notepad++, Sublime Text are detected and launched with `--wait` flag on Windows
+- **File permissions**:
+  - Platform-appropriate permissions are set for directories and files
 
 ## Note Commands
 
@@ -260,12 +264,23 @@ Each task file contains:
 Created: 2026-01-15T10:49:30-07:00
 Updated: 2026-01-15T10:49:56-07:00
 Status: open
-NoteID: 7
+NoteID: 
 Name: Buy groceries
 This is task content...
 ```
 
-The `NoteID` field references the associated note in `~/.local/share/notes/`.
+The `NoteID` field is reserved for future note integration and is currently empty.
+
+## Note Commands
+Created: 2026-01-15T10:49:30-07:00
+Updated: 2026-01-15T10:49:56-07:00
+Status: open
+NoteID: 
+Name: Buy groceries
+This is task content...
+```
+
+The `NoteID` field is reserved for future note integration and is currently empty.
 ```
 
 Each note file contains:
@@ -279,8 +294,8 @@ This is the note content...
 
 ## Configuration
 
-- **Editor**: Set via `$EDITOR` environment variable (defaults to `vi`)
-- **Storage location**: `~/.local/share/notes/` (XDG Base Directory compliant)
+- **Editor**: Set via `$EDITOR` environment variable (defaults to `notepad` on Windows, `vi` on Unix)
+- **Storage location**: Platform-specific (see Cross-Platform Support section)
 - **ID generation**: Sequential numbers stored in `.counter` file
 
 ## Development
@@ -298,14 +313,16 @@ This is the note content...
 ├── task_new.go                  # Create new tasks command
 ├── task_list.go                 # List tasks command
 ├── task_search.go               # Search tasks command
-├── task_edit.go                # Edit task's note command
+├── task_edit.go                # Edit task content command
 ├── task_delete.go              # Delete tasks command
 ├── task_status.go              # Change task status command
 ├── internal/
 │   ├── notes/
 │   │   └── notes.go          # Core note logic and storage
-│   └── tasks/
-│       └── tasks.go          # Core task logic and storage
+│   ├── tasks/
+│   │   └── tasks.go          # Core task logic and storage
+│   └── platform/
+│       └── platform.go        # Cross-platform abstraction layer
 ├── go.mod
 ├── go.sum
 ├── Makefile

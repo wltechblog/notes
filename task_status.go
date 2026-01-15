@@ -9,9 +9,13 @@ import (
 
 var taskStatusCmd = &cobra.Command{
 	Use:   "status [id] [status]",
-	Short: "Change task status",
+	Short: "Change task status (open, completed, abandoned)",
+	Long:  "Change task status. Valid statuses: open, completed, abandoned",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if !taskMode {
+			return fmt.Errorf("this command is only available for tasks")
+		}
 		tm, err := tasks.NewTaskManager()
 		if err != nil {
 			return err

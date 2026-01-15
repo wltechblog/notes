@@ -12,6 +12,9 @@ var searchCmd = &cobra.Command{
 	Short: "Search notes by keyword",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if !noteMode {
+			return fmt.Errorf("this command is only available for notes, use 'task search' instead")
+		}
 		nm, err := notes.NewNoteManager()
 		if err != nil {
 			return err

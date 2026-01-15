@@ -12,6 +12,9 @@ var deleteCmd = &cobra.Command{
 	Short: "Delete a note",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if !noteMode {
+			return fmt.Errorf("this command is only available for notes, use 'task delete' instead")
+		}
 		nm, err := notes.NewNoteManager()
 		if err != nil {
 			return err
