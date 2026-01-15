@@ -24,6 +24,7 @@ git clone https://github.com/wltechblog/notes.git
 cd notes
 go build -o note
 sudo cp note /usr/local/bin/  # or copy to ~/.local/bin/
+sudo ln -s /usr/local/bin/note /usr/local/bin/task
 ```
 
 ### Using Makefile
