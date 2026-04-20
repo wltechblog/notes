@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wltechblog/notes/internal/gitbackup"
 	"github.com/wltechblog/notes/internal/platform"
 )
 
@@ -38,6 +39,8 @@ func NewNoteManager() (*NoteManager, error) {
 	if err := os.MkdirAll(baseDir, platform.GetDataDirPerm()); err != nil {
 		return nil, fmt.Errorf("failed to create notes directory: %w", err)
 	}
+
+	gitbackup.Warn(gitbackup.EnsureRepo(baseDir))
 
 	return &NoteManager{baseDir: baseDir}, nil
 }
@@ -121,6 +124,7 @@ func (nm *NoteManager) DeleteNote(id string) error {
 	if err := os.Remove(notePath); err != nil {
 		return fmt.Errorf("failed to delete note: %w", err)
 	}
+	gitbackup.Warn(gitbackup.Commit(nm.baseDir, "delete note "+id))
 	return nil
 }
 
@@ -186,6 +190,8 @@ func (nm *NoteManager) saveNote(note *Note) error {
 	if err := os.WriteFile(notePath, []byte(content), platform.GetDataFilePerm()); err != nil {
 		return fmt.Errorf("failed to save note: %w", err)
 	}
+
+	gitbackup.Warn(gitbackup.Commit(nm.baseDir, "save note "+note.ID))
 
 	return nil
 }

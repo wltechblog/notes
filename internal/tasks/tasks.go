@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wltechblog/notes/internal/gitbackup"
 	"github.com/wltechblog/notes/internal/platform"
 )
 
@@ -44,6 +45,8 @@ func NewTaskManager() (*TaskManager, error) {
 	if err := os.MkdirAll(baseDir, platform.GetDataDirPerm()); err != nil {
 		return nil, fmt.Errorf("failed to create tasks directory: %w", err)
 	}
+
+	gitbackup.Warn(gitbackup.EnsureRepo(baseDir))
 
 	return &TaskManager{baseDir: baseDir}, nil
 }
@@ -212,6 +215,8 @@ func (tm *TaskManager) saveTask(task *Task) error {
 		return fmt.Errorf("failed to save task: %w", err)
 	}
 
+	gitbackup.Warn(gitbackup.Commit(tm.baseDir, "save task "+task.ID))
+
 	return nil
 }
 
@@ -306,6 +311,8 @@ func (tm *TaskManager) DeleteTask(id string) error {
 	if err := os.Remove(taskPath); err != nil {
 		return fmt.Errorf("failed to delete task: %w", err)
 	}
+
+	gitbackup.Warn(gitbackup.Commit(tm.baseDir, "delete task "+id))
 
 	return nil
 }
