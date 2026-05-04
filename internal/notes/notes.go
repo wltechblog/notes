@@ -42,7 +42,9 @@ func NewNoteManager() (*NoteManager, error) {
 		return nil, fmt.Errorf("failed to create notes directory: %w", err)
 	}
 
-	gitbackup.Warn(gitbackup.EnsureRepo(baseDir))
+	if err := gitbackup.EnsureRepo(baseDir); err != nil {
+		return nil, fmt.Errorf("failed to initialize notes backup repo: %w", err)
+	}
 
 	return &NoteManager{baseDir: baseDir}, nil
 }
@@ -233,16 +235,21 @@ func (nm *NoteManager) EditInEditor(note *Note) error {
 	cmd.Stderr = os.Stderr
 
 	ctx, cancel := context.WithCancel(context.Background())
-	go editor.Watch(ctx, tmpPath, 500*time.Millisecond, func(data []byte) {
-		note.Content = string(data)
-		note.UpdatedAt = time.Now()
-		if nm.writeNote(note) == nil {
-			_ = gitbackup.Commit(nm.baseDir, "save note "+note.ID)
-		}
-	})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		editor.Watch(ctx, tmpPath, 500*time.Millisecond, func(data []byte) {
+			note.Content = string(data)
+			note.UpdatedAt = time.Now()
+			if nm.writeNote(note) == nil {
+				_ = gitbackup.Commit(nm.baseDir, "save note "+note.ID)
+			}
+		})
+	}()
 
 	err = cmd.Run()
 	cancel()
+	<-done
 	if err != nil {
 		return fmt.Errorf("failed to open editor: %w", err)
 	}
