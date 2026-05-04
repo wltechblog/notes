@@ -33,17 +33,15 @@ func EnsureRepo(dir string) error {
 }
 
 // ensureIdentity sets a local fallback identity only if none is configured anywhere.
+// git config returns exit code 1 for unset keys, which is the normal "not configured"
+// case — we only error on write failures, not on missing reads.
 func ensureIdentity(dir string) error {
-	if out, err := run(dir, "config", "user.email"); err != nil {
-		return fmt.Errorf("git config user.email: %w: %s", err, firstLine(out))
-	} else if len(strings.TrimSpace(string(out))) == 0 {
+	if out, _ := run(dir, "config", "user.email"); len(strings.TrimSpace(string(out))) == 0 {
 		if out, err := run(dir, "config", "user.email", "notes@localhost"); err != nil {
 			return fmt.Errorf("git config user.email: %w: %s", err, firstLine(out))
 		}
 	}
-	if out, err := run(dir, "config", "user.name"); err != nil {
-		return fmt.Errorf("git config user.name: %w: %s", err, firstLine(out))
-	} else if len(strings.TrimSpace(string(out))) == 0 {
+	if out, _ := run(dir, "config", "user.name"); len(strings.TrimSpace(string(out))) == 0 {
 		if out, err := run(dir, "config", "user.name", "notes"); err != nil {
 			return fmt.Errorf("git config user.name: %w: %s", err, firstLine(out))
 		}

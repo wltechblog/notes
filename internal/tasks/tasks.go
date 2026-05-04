@@ -47,9 +47,7 @@ func NewTaskManager() (*TaskManager, error) {
 		return nil, fmt.Errorf("failed to create tasks directory: %w", err)
 	}
 
-	if err := gitbackup.EnsureRepo(baseDir); err != nil {
-		return nil, fmt.Errorf("failed to initialize tasks backup repo: %w", err)
-	}
+	gitbackup.Warn(gitbackup.EnsureRepo(baseDir))
 
 	return &TaskManager{baseDir: baseDir}, nil
 }
