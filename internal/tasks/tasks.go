@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -48,7 +47,9 @@ func NewTaskManager() (*TaskManager, error) {
 		return nil, fmt.Errorf("failed to create tasks directory: %w", err)
 	}
 
-	gitbackup.Warn(gitbackup.EnsureRepo(baseDir))
+	if err := gitbackup.EnsureRepo(baseDir); err != nil {
+		return nil, fmt.Errorf("failed to initialize tasks backup repo: %w", err)
+	}
 
 	return &TaskManager{baseDir: baseDir}, nil
 }
@@ -269,29 +270,33 @@ func (tm *TaskManager) EditInEditor(task *Task) error {
 	}
 	tmpFile.Close()
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	cmdArgs := platform.GetEditorArgs(editorCmd, tmpPath)
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" && platform.IsGUIEditor(editorCmd) {
-		cmd = exec.Command(cmdArgs[0], cmdArgs[1:]...)
-	} else {
-		cmd = exec.Command(editorCmd, tmpPath)
-	}
+	cmd := exec.CommandContext(ctx, cmdArgs[0], cmdArgs[1:]...)
 
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	ctx, cancel := context.WithCancel(context.Background())
-	go editor.Watch(ctx, tmpPath, 500*time.Millisecond, func(data []byte) {
-		task.Content = string(data)
-		task.UpdatedAt = time.Now()
-		if tm.writeTask(task) == nil {
-			_ = gitbackup.Commit(tm.baseDir, "save task "+task.ID)
-		}
-	})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		editor.Watch(ctx, tmpPath, 500*time.Millisecond, func(data []byte) {
+			task.Content = string(data)
+			task.UpdatedAt = time.Now()
+			if err := tm.writeTask(task); err != nil {
+				gitbackup.Warn(fmt.Errorf("autosave write task %s: %w", task.ID, err))
+				return
+			}
+			gitbackup.Warn(gitbackup.Commit(tm.baseDir, "save task "+task.ID))
+		})
+	}()
 
 	err = cmd.Run()
 	cancel()
+	<-done
 	if err != nil {
 		return fmt.Errorf("failed to open editor: %w", err)
 	}
@@ -323,6 +328,7 @@ func (tm *TaskManager) DeleteTask(id string) error {
 		if err := os.Remove(notePath); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("failed to delete associated note: %w", err)
 		}
+		gitbackup.Warn(gitbackup.Commit(notesDir, "delete note "+task.NoteID))
 	}
 
 	taskPath := filepath.Join(tm.baseDir, id+".txt")

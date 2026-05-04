@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -42,7 +41,9 @@ func NewNoteManager() (*NoteManager, error) {
 		return nil, fmt.Errorf("failed to create notes directory: %w", err)
 	}
 
-	gitbackup.Warn(gitbackup.EnsureRepo(baseDir))
+	if err := gitbackup.EnsureRepo(baseDir); err != nil {
+		return nil, fmt.Errorf("failed to initialize notes backup repo: %w", err)
+	}
 
 	return &NoteManager{baseDir: baseDir}, nil
 }
@@ -220,29 +221,33 @@ func (nm *NoteManager) EditInEditor(note *Note) error {
 	}
 	tmpFile.Close()
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	cmdArgs := platform.GetEditorArgs(editorCmd, tmpPath)
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" && platform.IsGUIEditor(editorCmd) {
-		cmd = exec.Command(cmdArgs[0], cmdArgs[1:]...)
-	} else {
-		cmd = exec.Command(editorCmd, tmpPath)
-	}
+	cmd := exec.CommandContext(ctx, cmdArgs[0], cmdArgs[1:]...)
 
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	ctx, cancel := context.WithCancel(context.Background())
-	go editor.Watch(ctx, tmpPath, 500*time.Millisecond, func(data []byte) {
-		note.Content = string(data)
-		note.UpdatedAt = time.Now()
-		if nm.writeNote(note) == nil {
-			_ = gitbackup.Commit(nm.baseDir, "save note "+note.ID)
-		}
-	})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		editor.Watch(ctx, tmpPath, 500*time.Millisecond, func(data []byte) {
+			note.Content = string(data)
+			note.UpdatedAt = time.Now()
+			if err := nm.writeNote(note); err != nil {
+				gitbackup.Warn(fmt.Errorf("autosave write note %s: %w", note.ID, err))
+				return
+			}
+			gitbackup.Warn(gitbackup.Commit(nm.baseDir, "save note "+note.ID))
+		})
+	}()
 
 	err = cmd.Run()
 	cancel()
+	<-done
 	if err != nil {
 		return fmt.Errorf("failed to open editor: %w", err)
 	}

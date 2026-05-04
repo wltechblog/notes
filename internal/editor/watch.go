@@ -29,11 +29,11 @@ func Watch(ctx context.Context, path string, interval time.Duration, onSave func
 			if !st.ModTime().After(lastMtime) {
 				continue
 			}
-			lastMtime = st.ModTime()
 			data, err := os.ReadFile(path)
 			if err != nil {
 				continue
 			}
+			lastMtime = st.ModTime()
 			onSave(data)
 		}
 	}
