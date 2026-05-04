@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -222,19 +221,16 @@ func (nm *NoteManager) EditInEditor(note *Note) error {
 	}
 	tmpFile.Close()
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	cmdArgs := platform.GetEditorArgs(editorCmd, tmpPath)
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" && platform.IsGUIEditor(editorCmd) {
-		cmd = exec.Command(cmdArgs[0], cmdArgs[1:]...)
-	} else {
-		cmd = exec.Command(editorCmd, tmpPath)
-	}
+	cmd := exec.CommandContext(ctx, cmdArgs[0], cmdArgs[1:]...)
 
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
