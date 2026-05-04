@@ -1,6 +1,7 @@
 package notes
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wltechblog/notes/internal/editor"
+	"github.com/wltechblog/notes/internal/gitbackup"
 	"github.com/wltechblog/notes/internal/platform"
 )
 
@@ -38,6 +41,8 @@ func NewNoteManager() (*NoteManager, error) {
 	if err := os.MkdirAll(baseDir, platform.GetDataDirPerm()); err != nil {
 		return nil, fmt.Errorf("failed to create notes directory: %w", err)
 	}
+
+	gitbackup.Warn(gitbackup.EnsureRepo(baseDir))
 
 	return &NoteManager{baseDir: baseDir}, nil
 }
@@ -121,6 +126,7 @@ func (nm *NoteManager) DeleteNote(id string) error {
 	if err := os.Remove(notePath); err != nil {
 		return fmt.Errorf("failed to delete note: %w", err)
 	}
+	gitbackup.Warn(gitbackup.Commit(nm.baseDir, "delete note "+id))
 	return nil
 }
 
@@ -175,7 +181,7 @@ func (nm *NoteManager) loadNote(id string) (Note, error) {
 	}, nil
 }
 
-func (nm *NoteManager) saveNote(note *Note) error {
+func (nm *NoteManager) writeNote(note *Note) error {
 	var content string
 	content += fmt.Sprintf("Created: %s\n", note.CreatedAt.Format(time.RFC3339))
 	content += fmt.Sprintf("Updated: %s\n", note.UpdatedAt.Format(time.RFC3339))
@@ -186,12 +192,19 @@ func (nm *NoteManager) saveNote(note *Note) error {
 	if err := os.WriteFile(notePath, []byte(content), platform.GetDataFilePerm()); err != nil {
 		return fmt.Errorf("failed to save note: %w", err)
 	}
+	return nil
+}
 
+func (nm *NoteManager) saveNote(note *Note) error {
+	if err := nm.writeNote(note); err != nil {
+		return err
+	}
+	gitbackup.Warn(gitbackup.Commit(nm.baseDir, "save note "+note.ID))
 	return nil
 }
 
 func (nm *NoteManager) EditInEditor(note *Note) error {
-	editor := platform.GetDefaultEditor()
+	editorCmd := platform.GetDefaultEditor()
 
 	tmpFile, err := os.CreateTemp("", "note-*.txt")
 	if err != nil {
@@ -207,19 +220,30 @@ func (nm *NoteManager) EditInEditor(note *Note) error {
 	}
 	tmpFile.Close()
 
-	cmdArgs := platform.GetEditorArgs(editor, tmpPath)
+	cmdArgs := platform.GetEditorArgs(editorCmd, tmpPath)
 	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" && platform.IsGUIEditor(editor) {
+	if runtime.GOOS == "windows" && platform.IsGUIEditor(editorCmd) {
 		cmd = exec.Command(cmdArgs[0], cmdArgs[1:]...)
 	} else {
-		cmd = exec.Command(editor, tmpPath)
+		cmd = exec.Command(editorCmd, tmpPath)
 	}
 
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	if err := cmd.Run(); err != nil {
+	ctx, cancel := context.WithCancel(context.Background())
+	go editor.Watch(ctx, tmpPath, 500*time.Millisecond, func(data []byte) {
+		note.Content = string(data)
+		note.UpdatedAt = time.Now()
+		if nm.writeNote(note) == nil {
+			_ = gitbackup.Commit(nm.baseDir, "save note "+note.ID)
+		}
+	})
+
+	err = cmd.Run()
+	cancel()
+	if err != nil {
 		return fmt.Errorf("failed to open editor: %w", err)
 	}
 

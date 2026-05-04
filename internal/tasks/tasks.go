@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wltechblog/notes/internal/editor"
+	"github.com/wltechblog/notes/internal/gitbackup"
 	"github.com/wltechblog/notes/internal/platform"
 )
 
@@ -44,6 +47,8 @@ func NewTaskManager() (*TaskManager, error) {
 	if err := os.MkdirAll(baseDir, platform.GetDataDirPerm()); err != nil {
 		return nil, fmt.Errorf("failed to create tasks directory: %w", err)
 	}
+
+	gitbackup.Warn(gitbackup.EnsureRepo(baseDir))
 
 	return &TaskManager{baseDir: baseDir}, nil
 }
@@ -198,7 +203,7 @@ func (tm *TaskManager) loadTask(id string) (Task, error) {
 	}, nil
 }
 
-func (tm *TaskManager) saveTask(task *Task) error {
+func (tm *TaskManager) writeTask(task *Task) error {
 	var content string
 	content += fmt.Sprintf("Created: %s\n", task.CreatedAt.Format(time.RFC3339))
 	content += fmt.Sprintf("Updated: %s\n", task.UpdatedAt.Format(time.RFC3339))
@@ -211,7 +216,14 @@ func (tm *TaskManager) saveTask(task *Task) error {
 	if err := os.WriteFile(taskPath, []byte(content), platform.GetDataFilePerm()); err != nil {
 		return fmt.Errorf("failed to save task: %w", err)
 	}
+	return nil
+}
 
+func (tm *TaskManager) saveTask(task *Task) error {
+	if err := tm.writeTask(task); err != nil {
+		return err
+	}
+	gitbackup.Warn(gitbackup.Commit(tm.baseDir, "save task "+task.ID))
 	return nil
 }
 
@@ -241,7 +253,7 @@ func (tm *TaskManager) getNextID() (string, error) {
 }
 
 func (tm *TaskManager) EditInEditor(task *Task) error {
-	editor := platform.GetDefaultEditor()
+	editorCmd := platform.GetDefaultEditor()
 
 	tmpFile, err := os.CreateTemp("", "task-*.txt")
 	if err != nil {
@@ -257,19 +269,30 @@ func (tm *TaskManager) EditInEditor(task *Task) error {
 	}
 	tmpFile.Close()
 
-	cmdArgs := platform.GetEditorArgs(editor, tmpPath)
+	cmdArgs := platform.GetEditorArgs(editorCmd, tmpPath)
 	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" && platform.IsGUIEditor(editor) {
+	if runtime.GOOS == "windows" && platform.IsGUIEditor(editorCmd) {
 		cmd = exec.Command(cmdArgs[0], cmdArgs[1:]...)
 	} else {
-		cmd = exec.Command(editor, tmpPath)
+		cmd = exec.Command(editorCmd, tmpPath)
 	}
 
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	if err := cmd.Run(); err != nil {
+	ctx, cancel := context.WithCancel(context.Background())
+	go editor.Watch(ctx, tmpPath, 500*time.Millisecond, func(data []byte) {
+		task.Content = string(data)
+		task.UpdatedAt = time.Now()
+		if tm.writeTask(task) == nil {
+			_ = gitbackup.Commit(tm.baseDir, "save task "+task.ID)
+		}
+	})
+
+	err = cmd.Run()
+	cancel()
+	if err != nil {
 		return fmt.Errorf("failed to open editor: %w", err)
 	}
 
@@ -306,6 +329,8 @@ func (tm *TaskManager) DeleteTask(id string) error {
 	if err := os.Remove(taskPath); err != nil {
 		return fmt.Errorf("failed to delete task: %w", err)
 	}
+
+	gitbackup.Warn(gitbackup.Commit(tm.baseDir, "delete task "+id))
 
 	return nil
 }
