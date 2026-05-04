@@ -237,9 +237,11 @@ func (nm *NoteManager) EditInEditor(note *Note) error {
 		editor.Watch(ctx, tmpPath, 500*time.Millisecond, func(data []byte) {
 			note.Content = string(data)
 			note.UpdatedAt = time.Now()
-			if nm.writeNote(note) == nil {
-				_ = gitbackup.Commit(nm.baseDir, "save note "+note.ID)
+			if err := nm.writeNote(note); err != nil {
+				gitbackup.Warn(fmt.Errorf("autosave write note %s: %w", note.ID, err))
+				return
 			}
+			gitbackup.Warn(gitbackup.Commit(nm.baseDir, "save note "+note.ID))
 		})
 	}()
 

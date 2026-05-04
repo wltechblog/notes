@@ -286,9 +286,11 @@ func (tm *TaskManager) EditInEditor(task *Task) error {
 		editor.Watch(ctx, tmpPath, 500*time.Millisecond, func(data []byte) {
 			task.Content = string(data)
 			task.UpdatedAt = time.Now()
-			if tm.writeTask(task) == nil {
-				_ = gitbackup.Commit(tm.baseDir, "save task "+task.ID)
+			if err := tm.writeTask(task); err != nil {
+				gitbackup.Warn(fmt.Errorf("autosave write task %s: %w", task.ID, err))
+				return
 			}
+			gitbackup.Warn(gitbackup.Commit(tm.baseDir, "save task "+task.ID))
 		})
 	}()
 
