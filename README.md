@@ -15,6 +15,8 @@ The same binary serves both functions - invoked as `note` for notes and `task` f
 - **Status filtering**: List tasks by status
 - **Cross-platform support**: Works on Windows, Linux, and macOS with appropriate defaults
 - **Shell completion**: Auto-complete support for bash, zsh, fish, and powershell
+- **Git-backed versioning**: Automatic git repository initialization and commits for all changes
+- **In-editor auto-save**: Content is saved and committed while you type, not just on editor exit
 
 ## Installation
 
@@ -102,6 +104,8 @@ task edit 1            # Example: edit task 1
 
 Opens `$EDITOR` with the task content. Updates the task's content and last edited timestamp.
 
+While the editor is open, changes are auto-saved every 500ms and committed to the local git repository.
+
 ## Cross-Platform Support
 
 The application is designed to work on both Windows and Unix-like systems:
@@ -153,6 +157,8 @@ note edit a1b2c3d4      # Example: edit specific note
 ```
 
 Updates the note's content and last edited timestamp when saved.
+
+While the editor is open, changes are auto-saved every 500ms and committed to the local git repository.
 
 ### Delete a note
 
@@ -221,6 +227,30 @@ note completion powershell > note.ps1
 task completion powershell > task.ps1
 ```
 
+## Git-Backed Versioning
+
+Both notes and tasks directories are automatically initialized as git repositories on first use. Every create, edit, and delete is committed automatically — no manual git operations needed.
+
+### How it works
+
+- **Automatic init**: If no `.git` exists in the data directory, one is created with a local fallback identity (`notes@localhost`)
+- **Auto-commits**: Each save or delete triggers a `git add -A && git commit` in the background
+- **In-editor auto-save**: While editing, a file watcher polls for changes every 500ms, persists them to disk, and commits — so you never lose work even if the editor crashes
+- **Non-blocking**: Git operations have a 5-second timeout. If git is unavailable or encounters an error, a warning is printed to stderr but all note/task operations continue normally
+
+### Browsing history
+
+Since the data directories are standard git repos, you can use regular git commands to inspect history:
+
+```bash
+cd ~/.local/share/notes
+git log --oneline       # View note history
+git diff HEAD~1         # See what changed last
+git checkout HEAD~1 -- 1.txt   # Restore a previous version
+```
+
+The same applies to `~/.local/share/tasks/`.
+
 ## Storage
 
 ### Note Storage
@@ -229,10 +259,11 @@ Notes are stored as plain text files in `~/.local/share/notes/`:
 
 ```
 ~/.local/share/notes/
+├── .git/         # Git repository for version history
 ├── 1.txt
 ├── 2.txt
 ├── 3.txt
-├── .counter    # Tracks next ID
+├── .counter      # Tracks next ID
 └── ...
 ```
 
@@ -251,10 +282,11 @@ Tasks are stored as plain text files in `~/.local/share/tasks/`:
 
 ```
 ~/.local/share/tasks/
+├── .git/         # Git repository for version history
 ├── 1.txt
 ├── 2.txt
 ├── 3.txt
-├── .counter    # Tracks next ID
+├── .counter      # Tracks next ID
 └── ...
 ```
 
