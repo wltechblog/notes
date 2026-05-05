@@ -41,9 +41,7 @@ func NewNoteManager() (*NoteManager, error) {
 		return nil, fmt.Errorf("failed to create notes directory: %w", err)
 	}
 
-	if err := gitbackup.EnsureRepo(baseDir); err != nil {
-		return nil, fmt.Errorf("failed to initialize notes backup repo: %w", err)
-	}
+	gitbackup.Warn(gitbackup.EnsureRepo(baseDir))
 
 	return &NoteManager{baseDir: baseDir}, nil
 }
